@@ -18,6 +18,7 @@ local weaponName = "Shadow Monarch"
 local wasFarmingAizen = false
 local wasFarmingYamato = false
 local currentTarget = nil
+local isTeleporting = false
 
 -------------------------------------------------------------------------
 -- MOBILE-SAFE ANTI-AFK SYSTEM
@@ -125,11 +126,11 @@ local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/d
 local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
 
 local Window = Fluent:CreateWindow({
-    Title = "Auto Farm Hub",
+    Title = "Auto Kuy",
     SubTitle = "Mobile Optimized",
     TabWidth = 160,
     Size = UDim2.fromOffset(580, 460),
-    Acrylic = false, -- Disabled blur for better mobile performance
+    Acrylic = false, 
     Theme = "Dark",
     MinimizeKey = Enum.KeyCode.LeftControl
 })
@@ -162,7 +163,7 @@ Window:SelectTab(1)
 
 Fluent:Notify({
     Title = "Mobile Script Loaded",
-    Content = "Anti-AFK active. Safe teleports enabled.",
+    Content = "Anti-AFK active. Fixed Teleport Glitch.",
     Duration = 5
 })
 
@@ -172,6 +173,9 @@ Fluent:Notify({
 
 -- NOCLIP
 RunService.Stepped:Connect(function()
+    -- CRITICAL MOBILE FIX: Do not noclip while teleporting so you don't fall through the floor!
+    if isTeleporting then return end 
+
     local isFarmingToggle = (Options.FarmQuincy and Options.FarmQuincy.Value) or 
                             (Options.FarmAizen and Options.FarmAizen.Value) or 
                             (Options.FarmYamato and Options.FarmYamato.Value) or
@@ -210,107 +214,103 @@ task.spawn(function()
 				
 				ensureWeaponEquipped(character)
 				
-				local aizenBoss = (farmA or farmAll) and getAizen() or nil
-				local yamatoBoss = (farmY or farmAll) and getYamato() or nil
-				
-				if aizenBoss then
-                    if wasFarmingYamato then
-                        wasFarmingYamato = false
-                    end
-					if not wasFarmingAizen then
-						wasFarmingAizen = true
-						currentTarget = aizenBoss
+				-- 1. Check if our current target is dead or despawned
+				if currentTarget then
+					local hum = currentTarget:FindFirstChild("Humanoid")
+                    
+                    -- If the target is removed from the game OR health is 0
+					if not currentTarget.Parent or (hum and hum.Health <= 0) then
                         
-                        -- MOBILE SAFETY FIX: Pause flight and anchor to prevent falling while teleporting
-                        alignPos.Enabled = false
-                        alignOri.Enabled = false
-                        hrp.Anchored = true 
-                        
-						teleportRemote:FireServer("HuecoMundo")
-						task.wait(3.5) -- Give mobile enough time to render the new location
-                        
-                        hrp.Anchored = false -- Resume movement
-					else
-						currentTarget = aizenBoss
-					end
-					
-				elseif yamatoBoss then
-					if wasFarmingAizen then
-						wasFarmingAizen = false
-						currentTarget = nil
-						humanoid.Health = 0
-						task.wait(4)
-						continue 
-					end
-					
-                    if not wasFarmingYamato then
-                        wasFarmingYamato = true
-                        currentTarget = yamatoBoss
-                        
-                        -- MOBILE SAFETY FIX
-                        alignPos.Enabled = false
-                        alignOri.Enabled = false
-                        hrp.Anchored = true
-                        
-                        teleportRemote:FireServer("Judgement")
-                        task.wait(3.5)
-                        
-                        hrp.Anchored = false
-                    else
-					    currentTarget = yamatoBoss
-                    end
-					
-				else
-					if wasFarmingAizen or wasFarmingYamato then
-						wasFarmingAizen = false
-                        wasFarmingYamato = false
-						currentTarget = nil
-						humanoid.Health = 0
-						task.wait(4)
-						continue 
-					end
-					
-					if currentTarget then
-						local hum = currentTarget:FindFirstChild("Humanoid")
-						local targetHRP = currentTarget:FindFirstChild("HumanoidRootPart")
-						if not hum or not targetHRP or hum.Health <= 0 then
-							currentTarget = nil 
-						end
-					end
-					
-					if not currentTarget then
-						currentTarget = getNextQuincy()
+                        -- If we just killed a boss, we need to reset back to the normal map
+                        if wasFarmingAizen or wasFarmingYamato then
+                            wasFarmingAizen = false
+                            wasFarmingYamato = false
+                            currentTarget = nil
+                            humanoid.Health = 0 -- Reset character
+                            task.wait(4)
+                            continue 
+                        else
+                            -- It was just a Quincy, simply clear the target
+                            currentTarget = nil
+                        end
 					end
 				end
 				
-				if currentTarget and currentTarget:FindFirstChild("HumanoidRootPart") then
-                    hrp.Anchored = false
-					
-                    if currentTarget.Name == "YamatoBoss" then
-                        alignPos.MaxVelocity = 50 
+				-- 2. If we don't have a target, find one using priority rules
+				if not currentTarget then
+                    local aizenBoss = (farmA or farmAll) and getAizen() or nil
+				    local yamatoBoss = (farmY or farmAll) and getYamato() or nil
+
+                    if aizenBoss then
+                        currentTarget = aizenBoss
+                        wasFarmingAizen = true
+                        
+                        -- Mobile Teleport Sequence
+                        isTeleporting = true
+                        alignPos.Enabled = false
+                        alignOri.Enabled = false
+                        hrp.Anchored = false 
+                        
+                        teleportRemote:FireServer("HuecoMundo")
+                        task.wait(5) -- Wait 5 seconds for phone to load map and boss
+                        
+                        isTeleporting = false
+                        
+                    elseif yamatoBoss then
+                        currentTarget = yamatoBoss
+                        wasFarmingYamato = true
+                        
+                        -- Mobile Teleport Sequence
+                        isTeleporting = true
+                        alignPos.Enabled = false
+                        alignOri.Enabled = false
+                        hrp.Anchored = false
+                        
+                        teleportRemote:FireServer("Judgement")
+                        task.wait(5) 
+                        
+                        isTeleporting = false
+                        
                     else
-                        alignPos.MaxVelocity = 500 
+                        currentTarget = getNextQuincy()
                     end
-					
-                    alignPos.Enabled = true
-					alignOri.Enabled = true
-					
-					local targetHRP = currentTarget.HumanoidRootPart
-					
-					local goalPos = (targetHRP.CFrame * CFrame.new(0, heightAbove, distanceBehind)).Position
-					local goalCFrame = CFrame.lookAt(goalPos, targetHRP.Position)
-					
-					alignPos.Position = goalPos
-					alignOri.CFrame = goalCFrame
-					
-					combatRemote:FireServer() 
+                end
+				
+				-- 3. Move to target and attack
+				if currentTarget and not isTeleporting then
+                    local targetHRP = currentTarget:FindFirstChild("HumanoidRootPart")
+                    
+                    if targetHRP then
+                        hrp.Anchored = false
+                        
+                        -- Dynamic Speed
+                        if currentTarget.Name == "YamatoBoss" then
+                            alignPos.MaxVelocity = 50 
+                        else
+                            alignPos.MaxVelocity = 500 
+                        end
+                        
+                        alignPos.Enabled = true
+                        alignOri.Enabled = true
+                        
+                        local goalPos = (targetHRP.CFrame * CFrame.new(0, heightAbove, distanceBehind)).Position
+                        local goalCFrame = CFrame.lookAt(goalPos, targetHRP.Position)
+                        
+                        alignPos.Position = goalPos
+                        alignOri.CFrame = goalCFrame
+                        
+                        combatRemote:FireServer() 
+                    end
 				else
 					alignPos.Enabled = false
 					alignOri.Enabled = false
-                    hrp.Anchored = true
+                    if not isTeleporting then
+                        hrp.Anchored = true -- Wait safely in the sky
+                    end
 				end
 			end
         else
+            -- Toggles OFF: Shut down flight completely
             alignPos.Enabled = false
             alignOri.Enabled = false
             if character and character:FindFirstChild("HumanoidRootPart") then
