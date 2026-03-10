@@ -20,19 +20,17 @@ local wasFarmingYamato = false
 local currentTarget = nil
 
 -------------------------------------------------------------------------
--- ANTI-AFK SYSTEM
+-- MOBILE-SAFE ANTI-AFK SYSTEM
 -------------------------------------------------------------------------
 player.Idled:Connect(function()
-    VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-    task.wait(1)
-    VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
 end)
 
 -------------------------------------------------------------------------
 -- MOVERS & TARGETING FUNCTIONS
 -------------------------------------------------------------------------
 
--- Create the Physics Movers
 local alignPos = Instance.new("AlignPosition")
 alignPos.Mode = Enum.PositionAlignmentMode.OneAttachment
 alignPos.MaxForce = 9999999
@@ -128,10 +126,10 @@ local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.
 
 local Window = Fluent:CreateWindow({
     Title = "Auto Farm Hub",
-    SubTitle = "Bleach Farm",
+    SubTitle = "Mobile Optimized",
     TabWidth = 160,
     Size = UDim2.fromOffset(580, 460),
-    Acrylic = true, 
+    Acrylic = false, -- Disabled blur for better mobile performance
     Theme = "Dark",
     MinimizeKey = Enum.KeyCode.LeftControl
 })
@@ -163,8 +161,8 @@ SaveManager:BuildConfigSection(Tabs.Settings)
 Window:SelectTab(1)
 
 Fluent:Notify({
-    Title = "Script Loaded",
-    Content = "Anti-AFK is active. Toggles are ready.",
+    Title = "Mobile Script Loaded",
+    Content = "Anti-AFK active. Safe teleports enabled.",
     Duration = 5
 })
 
@@ -202,16 +200,16 @@ task.spawn(function()
 		
 		if isFarming and character and character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("Humanoid") then
 			local humanoid = character.Humanoid
-			
+			local hrp = character.HumanoidRootPart
+            
 			if humanoid.Health > 0 then
 				
-				if alignPos.Parent ~= character.HumanoidRootPart then
+				if alignPos.Parent ~= hrp then
 					setupMovers(character)
 				end
 				
 				ensureWeaponEquipped(character)
 				
-				-- Check for bosses based on active toggles
 				local aizenBoss = (farmA or farmAll) and getAizen() or nil
 				local yamatoBoss = (farmY or farmAll) and getYamato() or nil
 				
@@ -222,8 +220,16 @@ task.spawn(function()
 					if not wasFarmingAizen then
 						wasFarmingAizen = true
 						currentTarget = aizenBoss
+                        
+                        -- MOBILE SAFETY FIX: Pause flight and anchor to prevent falling while teleporting
+                        alignPos.Enabled = false
+                        alignOri.Enabled = false
+                        hrp.Anchored = true 
+                        
 						teleportRemote:FireServer("HuecoMundo")
-						task.wait(1) 
+						task.wait(3.5) -- Give mobile enough time to render the new location
+                        
+                        hrp.Anchored = false -- Resume movement
 					else
 						currentTarget = aizenBoss
 					end
@@ -233,15 +239,23 @@ task.spawn(function()
 						wasFarmingAizen = false
 						currentTarget = nil
 						humanoid.Health = 0
-						task.wait(3)
+						task.wait(4)
 						continue 
 					end
 					
                     if not wasFarmingYamato then
                         wasFarmingYamato = true
                         currentTarget = yamatoBoss
+                        
+                        -- MOBILE SAFETY FIX
+                        alignPos.Enabled = false
+                        alignOri.Enabled = false
+                        hrp.Anchored = true
+                        
                         teleportRemote:FireServer("Judgement")
-                        task.wait(1)
+                        task.wait(3.5)
+                        
+                        hrp.Anchored = false
                     else
 					    currentTarget = yamatoBoss
                     end
@@ -252,14 +266,14 @@ task.spawn(function()
                         wasFarmingYamato = false
 						currentTarget = nil
 						humanoid.Health = 0
-						task.wait(3)
+						task.wait(4)
 						continue 
 					end
 					
 					if currentTarget then
 						local hum = currentTarget:FindFirstChild("Humanoid")
-						local hrp = currentTarget:FindFirstChild("HumanoidRootPart")
-						if not hum or not hrp or hum.Health <= 0 then
+						local targetHRP = currentTarget:FindFirstChild("HumanoidRootPart")
+						if not hum or not targetHRP or hum.Health <= 0 then
 							currentTarget = nil 
 						end
 					end
@@ -270,7 +284,7 @@ task.spawn(function()
 				end
 				
 				if currentTarget and currentTarget:FindFirstChild("HumanoidRootPart") then
-                    character.HumanoidRootPart.Anchored = false
+                    hrp.Anchored = false
 					
                     if currentTarget.Name == "YamatoBoss" then
                         alignPos.MaxVelocity = 50 
@@ -293,7 +307,7 @@ task.spawn(function()
 				else
 					alignPos.Enabled = false
 					alignOri.Enabled = false
-                    character.HumanoidRootPart.Anchored = true
+                    hrp.Anchored = true
 				end
 			end
         else
